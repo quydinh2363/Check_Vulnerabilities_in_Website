@@ -1,6 +1,6 @@
 # Welcome to my Repository - Check vulnerabilities in website project
 
-# Encryption/Decryption Tool
+# Check vulnerabilities in website scanner
 
 This project is written by Python, i am trying to test some vulnerabilities about SQL injection, XSS, CRSF.
 
