@@ -1,6 +1,4 @@
 import requests
-from bs4 import BeautifulSoup
-import argparse
 
 
 sql_payloads = list()
@@ -101,7 +99,7 @@ def scan_csrf(url):
 
 
 def main():
-    url = "http://testasp.vulnweb.com"
+    url = "..."
 
     if not url.startswith("http"):
         url = "http://" + url
