@@ -85,6 +85,8 @@ def scan_sql_injection(url):
     for form in forms:
         form_details = get_form_details(form)
         for payload in sql_payloads:
+            if not form_details['inputs']["name"] == "searchfor":
+                continue
             data = {}
             for input in form_details["inputs"]:
                 if input["type"] == "text":
