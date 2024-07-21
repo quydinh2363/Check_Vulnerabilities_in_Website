@@ -12,7 +12,7 @@ This project is written by Python, i am trying to test some vulnerabilities abou
 
 ## You will find in this repo:
 
-* scanner.py is a code file.
+* scanner.py is a scanner for all vulnerabilities.
 * SQLInjectionscanner.py is a best version for checking SQL injection.
 * SQLINJECTION.txt, XSS.txt are some injections.
 * CSRF: Multiple CSRF payloads are predefined in the script.
