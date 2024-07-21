@@ -1,9 +1,11 @@
 import requests
+from urllib.parse import urljoin
+from bs4 import BeautifulSoup
+import re
 
-
-sql_payloads = list()
-xss_payloads = list()
-csfr_payloads = [
+sql_payloads = []
+xss_payloads = []
+csrf_payloads = [
     {'param1': 'value1', 'param2': 'value2'},
     {'param1': 'value1', 'param2': '<script>alert(1)</script>'},
     {'param1': 'value1', 'param2': '"><script>alert(1)</script>'},
@@ -48,75 +50,122 @@ with open('SQLINJECTION.txt','r') as file:
         line = line.strip()
         sql_payloads.append(line)
 
-
-
 with open('XSS.txt','r', encoding='utf-8') as file2:
     for line in file2:
         line = line.strip()
         xss_payloads.append(line)
 
+def get_forms(url):
+    try:
+        res = requests.get(url, timeout=10)
+        res.raise_for_status()
+        soup = BeautifulSoup(res.content, "lxml")
+        return soup.find_all("form")
+    except requests.RequestException as e:
+        print(f"[-] Error fetching forms from {url}: {e}")
+        return []
 
+def get_form_details(form):
+    details = {}
+    action = form.attrs.get("action")
+    method = form.attrs.get("method", "get").lower()
+    inputs = []
+    for input_tag in form.find_all("input"):
+        input_name = input_tag.attrs.get("name")
+        input_type = input_tag.attrs.get("type", "text")
+        input_value = input_tag.attrs.get("value", "")
+        inputs.append({"name": input_name, "type": input_type, "value": input_value})
+    details["action"] = action
+    details["method"] = method
+    details["inputs"] = inputs
+    return details
 
 def scan_sql_injection(url):
-    for payload in sql_payloads:
-        full_url = f"{url}?id={payload}"
-        try:
-            r = requests.get(full_url, timeout=10)
-            if "syntax error" in r.text or "mysql_fetch_array" in r.text or "you have an error in your SQL syntax" in r.text or "1064" in r.text:
-                print(f"[+] SQL Injection vulnerability found with payload: {payload}")
-            else:
-                print(f"[-] No SQL injection vulnerability found with payload: {payload}")
-        except requests.RequestException as e:
-            print(f"[-] Error connecting to {full_url}: {e}")
-
-
+    forms = get_forms(url)
+    for form in forms:
+        form_details = get_form_details(form)
+        for payload in sql_payloads:
+            data = {}
+            for input in form_details["inputs"]:
+                if input["type"] == "text":
+                    data[input["name"]] = payload
+                else:
+                    data[input["name"]] = input["value"]
+            full_url = urljoin(url, form_details["action"])
+            try:
+                if form_details["method"] == "post":
+                    r = requests.post(full_url, data=data, timeout=10)
+                else:
+                    r = requests.get(full_url, params=data, timeout=10)
+                if r.status_code == 200 and any(error in r.text for error in ["syntax error", "mysql_fetch_array", "you have an error in your SQL syntax", "1064", "Warning: mysql", "Unclosed quotation mark"]):
+                    print(f"[+] SQL Injection vulnerability found with payload: {payload} in form: {form_details}")
+                else:
+                    print(f"[-] No SQL injection vulnerability found with payload: {payload}")
+            except requests.RequestException as e:
+                print(f"[-] Error connecting to {full_url} with payload {payload}: {e}")
 
 def scan_xss(url):
-    for payload in xss_payloads:
-        full_url = f"{url}?q={payload}"
-        try:
-            r = requests.get(full_url, timeout=10)
-            if payload in r.text:
-                print(f"[+] XSS vulnerability found with payload: {payload}")
-            else:
-                print(f"[-] No XSS vulnerability found with payload: {payload}")
-        except requests.RequestException as e:
-            print(f"[-] Error connecting to {full_url}: {e}")
-
-
+    forms = get_forms(url)
+    for form in forms:
+        form_details = get_form_details(form)
+        for payload in xss_payloads:
+            data = {}
+            for input in form_details["inputs"]:
+                if input["type"] == "text":
+                    data[input["name"]] = payload
+                else:
+                    data[input["name"]] = input["value"]
+            full_url = urljoin(url, form_details["action"])
+            try:
+                if form_details["method"] == "post":
+                    r = requests.post(full_url, data=data, timeout=10)
+                else:
+                    r = requests.get(full_url, params=data, timeout=10)
+                if payload in r.text and r.status_code == 200:
+                    print(f"[+] XSS vulnerability found with payload: {payload} in form: {form_details}")
+                else:
+                    print(f"[-] No XSS vulnerability found with payload: {payload}")
+            except requests.RequestException as e:
+                print(f"[-] Error connecting to {full_url} with payload {payload}: {e}")
 
 def scan_csrf(url):
-    for payload in csfr_payloads:
-        try: 
-            r = requests.post(url, data=payload, timeout=10)
-            if "csrf_token" not in r.text:
-                print(f"[+] CSRF vulnerability found with payload: {payload}")
-            else:
-                print(f"[-] No CSRF vulnerability found with payload: {payload}")
-        except requests.RequestException as e:
-            print(f"[-] Error connecting to {url} with payload {payload}: {e}")
+    forms = get_forms(url)
+    for form in forms:
+        form_details = get_form_details(form)
+        for payload in csrf_payloads:
+            data = {}
+            for input in form_details["inputs"]:
+                if input["type"] == "text":
+                    data[input["name"]] = payload[input["name"]] if input["name"] in payload else input["value"]
+                else:
+                    data[input["name"]] = input["value"]
+            full_url = urljoin(url, form_details["action"])
+            try:
+                r = requests.post(full_url, data=data, timeout=10)
+                if "csrf_token" not in r.text and r.status_code == 200:
+                    print(f"[+] CSRF vulnerability found with payload: {payload} in form: {form_details}")
+                else:
+                    print(f"[-] No CSRF vulnerability found with payload: {payload}")
+            except requests.RequestException as e:
+                print(f"[-] Error connecting to {full_url} with payload {payload}: {e}")
 
-
+def validate_url(url):
+    if not re.match(r'^https?://', url):
+        return "http://" + url
+    return url
 
 def main():
-    url = "..."
-
-    if not url.startswith("http"):
-        url = "http://" + url
+    url = input("Enter the URL to scan: ")
+    url = validate_url(url)
 
     print("Scanning for SQL Injection...")
-    scan_sql_injection("http://testasp.vulnweb.com")
-
+    scan_sql_injection(url)
 
     print("\nScanning for XSS...")
-    scan_xss("http://testasp.vulnweb.com")
+    scan_xss(url)
 
-
-    print("\nScanning for SCRF...")
-    scan_csrf("http://testasp.vulnweb.com")
+    print("\nScanning for CSRF...")
+    scan_csrf(url)
 
 if __name__ == "__main__":
     main()
-
-
-
